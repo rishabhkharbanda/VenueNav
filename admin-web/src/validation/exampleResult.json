@@ -1,0 +1,40 @@
+{
+  "errors": [
+    {
+      "id": "ORPHAN_NODE-0",
+      "code": "ORPHAN_NODE",
+      "severity": "error",
+      "message": "Node has no edges: N-abc123",
+      "relatedIds": ["N-abc123"],
+      "focus": { "x": 120.0, "y": 340.0 }
+    }
+  ],
+  "warnings": [
+    {
+      "id": "DEAD_END-0",
+      "code": "DEAD_END",
+      "severity": "warning",
+      "message": "Node is a dead end (single connection). Review: N-xyz",
+      "relatedIds": ["N-xyz"],
+      "focus": { "x": 200.0, "y": 200.0 }
+    }
+  ],
+  "issues": [
+    {
+      "id": "ORPHAN_NODE-0",
+      "code": "ORPHAN_NODE",
+      "severity": "error",
+      "message": "Node has no edges: N-abc123",
+      "relatedIds": ["N-abc123"],
+      "focus": { "x": 120.0, "y": 340.0 }
+    },
+    {
+      "id": "DEAD_END-0",
+      "code": "DEAD_END",
+      "severity": "warning",
+      "message": "Node is a dead end (single connection). Review: N-xyz",
+      "relatedIds": ["N-xyz"],
+      "focus": { "x": 200.0, "y": 200.0 }
+    }
+  ]
+}
