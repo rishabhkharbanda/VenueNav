@@ -36,6 +36,32 @@ export interface NavState {
   setRoute: (nodes: string[] | null, cost: number | null) => void;
   routeError: string | null;
   setRouteError: (e: string | null) => void;
+  /** Sets routeError without clearing the current path (e.g. after restoring last known route). */
+  setRouteErrorMessage: (e: string | null) => void;
+  /** Last successful route for live re-checks (full stop chain). */
+  routeSession: {
+    stopNodes: string[];
+    edgeIds: string[];
+    pathSignature: string;
+    totalCost: number;
+  } | null;
+  setRouteSession: (
+    s: { stopNodes: string[]; edgeIds: string[]; pathSignature: string; totalCost: number } | null
+  ) => void;
+  routeRefreshMessage: string | null;
+  setRouteRefreshMessage: (m: string | null) => void;
+  isOnline: boolean;
+  setIsOnline: (v: boolean) => void;
+  /** Last good route (API or offline) for error fallback */
+  lastRouteBackup: {
+    stopsKey: string;
+    nodes: string[];
+    cost: number;
+    edgeIds: string[];
+  } | null;
+  setLastRouteBackup: (
+    b: { stopsKey: string; nodes: string[]; cost: number; edgeIds: string[] } | null
+  ) => void;
 }
 
 function focusImpl(
@@ -107,12 +133,32 @@ export const useNavStore = create<NavState>((set, get) => ({
       routeNodes: null,
       routeTotalCost: null,
       routeError: null,
+      routeSession: null,
+      routeRefreshMessage: null,
+      lastRouteBackup: null,
     }),
 
+  isOnline: typeof navigator === "undefined" ? true : navigator.onLine,
+  setIsOnline: (v) => set({ isOnline: v }),
+  lastRouteBackup: null,
+  setLastRouteBackup: (b) => set({ lastRouteBackup: b }),
   routeNodes: null,
   routeTotalCost: null,
-  setRoute: (nodes, cost) => set({ routeNodes: nodes, routeTotalCost: cost, routeError: null }),
+  setRoute: (nodes, cost) =>
+    set({ routeNodes: nodes, routeTotalCost: cost, routeError: null, routeRefreshMessage: null }),
   routeError: null,
-  setRouteError: (e) => set({ routeError: e, routeNodes: null, routeTotalCost: null }),
+  setRouteError: (e) =>
+    set({
+      routeError: e,
+      routeNodes: null,
+      routeTotalCost: null,
+      routeSession: null,
+      routeRefreshMessage: null,
+    }),
+  setRouteErrorMessage: (e) => set({ routeError: e }),
+  routeSession: null,
+  setRouteSession: (s) => set({ routeSession: s }),
+  routeRefreshMessage: null,
+  setRouteRefreshMessage: (m) => set({ routeRefreshMessage: m }),
 }));
 

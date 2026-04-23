@@ -19,6 +19,8 @@ export interface GraphEdge {
   from: string;
   to: string;
   weight: number;
+  /** Server UUID; live routing controls use the published graph edge id. */
+  edge_id?: string;
 }
 
 export interface ShopMetaFootprint {

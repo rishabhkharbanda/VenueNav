@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getGraph, putGraph, publishMap } from "@/api/graphApi";
+import { getGraph, getMapSummary, getImportArtifact, putGraph, publishMap } from "@/api/graphApi";
 import type { MapPayload } from "@/types/mapGraph";
 import { useEditorStore } from "@/store/editorStore";
 
@@ -10,9 +10,27 @@ export function useMapGraphQuery(orgId: string, mapId: string) {
     queryKey: ["mapGraph", orgId, mapId, "draft"],
     enabled: Boolean(orgId && mapId),
     queryFn: async () => {
-      const data = await getGraph(orgId, mapId, "draft");
-      setContext(orgId, mapId, undefined);
+      const [summary, data, importRes] = await Promise.all([
+        getMapSummary(orgId, mapId),
+        getGraph(orgId, mapId, "draft"),
+        getImportArtifact(orgId, mapId).catch(() => ({ artifact: null, raster_url: null })),
+      ]);
+      setContext(orgId, mapId, summary.name);
+      useEditorStore.getState().setPublishedVersion(summary.published_version);
       hydrateGraph(data);
+      const art = importRes.artifact;
+      if (art?.suggested) {
+        useEditorStore.getState().setImportOverlay({
+          ...art.suggested,
+          map_id: data.map_id,
+          map_version_id: data.map_version_id,
+          raster_url: data.raster_url ?? null,
+        });
+        useEditorStore.getState().setImportOverlayMeta(art.suggested_annotations ?? null);
+      } else {
+        useEditorStore.getState().setImportOverlay(null);
+        useEditorStore.getState().setImportOverlayMeta(null);
+      }
       return data;
     },
   });

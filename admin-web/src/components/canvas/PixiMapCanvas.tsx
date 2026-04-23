@@ -12,12 +12,22 @@ export function PixiMapCanvas() {
   const layersRef = useRef<{
     world: Container | null;
     gEdges: Graphics | null;
+    gImport: Graphics | null;
     gShops: Graphics | null;
     gVal: Graphics | null;
     gNodes: Graphics | null;
     gRoute: Graphics | null;
     gDraw: Graphics | null;
-  }>({ world: null, gEdges: null, gShops: null, gVal: null, gNodes: null, gRoute: null, gDraw: null });
+  }>({
+    world: null,
+    gEdges: null,
+    gImport: null,
+    gShops: null,
+    gVal: null,
+    gNodes: null,
+    gRoute: null,
+    gDraw: null,
+  });
   const lastPanRef = useRef<{ x: number; y: number } | null>(null);
   const dragNodeRef = useRef<string | null>(null);
   const appRef = useRef<Application | null>(null);
@@ -25,11 +35,12 @@ export function PixiMapCanvas() {
   const redraw = useCallback(() => {
     const L = layersRef.current;
     const world = L.world;
-    if (!world || !L.gEdges || !L.gShops || !L.gVal || !L.gNodes || !L.gRoute || !L.gDraw) return;
+    if (!world || !L.gEdges || !L.gImport || !L.gShops || !L.gVal || !L.gNodes || !L.gRoute || !L.gDraw) return;
     const g = useEditorStore.getState().graph;
     if (!g) return;
 
     const gEdges = L.gEdges;
+    const gImport = L.gImport;
     const gShops = L.gShops;
     const gVal = L.gVal;
     const gNodes = L.gNodes;
@@ -47,6 +58,9 @@ export function PixiMapCanvas() {
       shopDrawPoints,
       validationErrors,
       validationWarnings,
+      importOverlay,
+      importOverlayMeta,
+      importOverlayVisible,
     } = st;
     const vIssues = [...validationErrors, ...validationWarnings];
     const nodeIdSet = new Set(g.nodes.map((n) => n.id));
@@ -67,6 +81,32 @@ export function PixiMapCanvas() {
       gEdges.lineTo(b.x, b.y);
       const k = [e.from, e.to].sort().join("::");
       gEdges.stroke({ width: selectedEdgeKey === k ? 3 : 1.2, color: selectedEdgeKey === k ? 0x5eead4 : 0x4b5563, alpha: 0.9 });
+    }
+
+    gImport.clear();
+    if (importOverlay && importOverlayVisible) {
+      const edgeConf = new Map<string, number>();
+      for (const row of importOverlayMeta?.edges_detail ?? []) {
+        edgeConf.set([row.from, row.to].sort().join("::"), row.confidence);
+      }
+      for (const e of importOverlay.edges) {
+        const a = importOverlay.nodes.find((n) => n.id === e.from);
+        const b = importOverlay.nodes.find((n) => n.id === e.to);
+        if (!a || !b) continue;
+        const k = [e.from, e.to].sort().join("::");
+        const c = edgeConf.get(k) ?? 0.55;
+        const al = 0.2 + 0.55 * Math.min(1, Math.max(0, c));
+        gImport.moveTo(a.x, a.y);
+        gImport.lineTo(b.x, b.y);
+        gImport.stroke({ width: 1 + 0.4 * c, color: 0x22d3ee, alpha: al });
+      }
+      for (const n of importOverlay.nodes) {
+        const nc = importOverlayMeta?.node_confidence?.[n.id];
+        const fillA = nc != null ? 0.22 + 0.45 * Math.min(1, Math.max(0, nc)) : 0.4;
+        gImport.circle(n.x, n.y, 4);
+        gImport.fill({ color: 0x06b6d4, alpha: fillA });
+        gImport.stroke({ width: 1, color: 0x22d3ee, alpha: 0.5 + 0.25 * (nc != null ? nc : 0.5) });
+      }
     }
 
     gShops.clear();
@@ -184,19 +224,21 @@ export function PixiMapCanvas() {
       app.stage.addChild(world);
 
       const gEdges = new Graphics();
+      const gImport = new Graphics();
       const gShops = new Graphics();
       const gVal = new Graphics();
       const gNodes = new Graphics();
       const gRoute = new Graphics();
       const gDraw = new Graphics();
       gEdges.zIndex = 1;
+      gImport.zIndex = 1.5;
       gShops.zIndex = 2;
       gVal.zIndex = 3;
       gNodes.zIndex = 4;
       gRoute.zIndex = 5;
       gDraw.zIndex = 6;
-      world.addChild(gEdges, gShops, gVal, gNodes, gRoute, gDraw);
-      layersRef.current = { world, gEdges, gShops, gVal, gNodes, gRoute, gDraw };
+      world.addChild(gEdges, gImport, gShops, gVal, gNodes, gRoute, gDraw);
+      layersRef.current = { world, gEdges, gImport, gShops, gVal, gNodes, gRoute, gDraw };
 
       const onResize = () => {
         app.renderer.resize(el.clientWidth, el.clientHeight);

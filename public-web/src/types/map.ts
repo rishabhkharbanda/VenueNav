@@ -17,6 +17,7 @@ export interface GraphEdge {
   from: string;
   to: string;
   weight: number;
+  edge_id?: string;
 }
 
 export interface MapShop {
@@ -78,3 +79,18 @@ export interface MultiRouteResponse {
   total_cost: number;
   segment_routes: Record<string, unknown>[];
 }
+
+export type LiveEdgeOverride = {
+  edge_id: string;
+  crowd_factor: number;
+  is_closed: boolean;
+  priority: number;
+  updated_at: string;
+};
+
+export type PublicLiveEdgesResponse = {
+  map_id: string;
+  map_version_id: string;
+  live_epoch: number;
+  edges: LiveEdgeOverride[];
+};

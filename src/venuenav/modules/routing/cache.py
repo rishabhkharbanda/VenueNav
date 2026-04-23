@@ -24,16 +24,16 @@ class GraphCache:
         self._lock = Lock()
         self._routing: dict[str, CachedGraph] = {}
 
-    def routing_key(self, map_id: UUID, version: int) -> str:
-        return f"{map_id}:{version}"
+    def routing_key(self, map_id: UUID, version: int, live_epoch: int) -> str:
+        return f"{map_id}:{version}:e{live_epoch}"
 
-    def get_routing(self, map_id: UUID, version: int) -> CachedGraph | None:
+    def get_routing(self, map_id: UUID, version: int, live_epoch: int) -> CachedGraph | None:
         with self._lock:
-            return self._routing.get(self.routing_key(map_id, version))
+            return self._routing.get(self.routing_key(map_id, version, live_epoch))
 
-    def set_routing(self, map_id: UUID, version: int, data: CachedGraph) -> None:
+    def set_routing(self, map_id: UUID, version: int, live_epoch: int, data: CachedGraph) -> None:
         with self._lock:
-            self._routing[self.routing_key(map_id, version)] = data
+            self._routing[self.routing_key(map_id, version, live_epoch)] = data
 
     def invalidate_map(self, map_id: UUID) -> None:
         with self._lock:
@@ -61,8 +61,8 @@ def payload_key(map_id: UUID, version: int) -> str:
     return f"venuenav:payload:{map_id}:{version}"
 
 
-def route_key(map_id: UUID, version: int, a: str, b: str) -> str:
-    return f"route:{map_id}:{version}:{a}:{b}"
+def route_key(map_id: UUID, version: int, live_epoch: int, a: str, b: str) -> str:
+    return f"route:{map_id}:{version}:e{live_epoch}:{a}:{b}"
 
 
 def build_cached_graph_from_rows(

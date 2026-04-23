@@ -19,6 +19,7 @@ import {
 import { canPlaceNodeAt, snapToGrid } from "@/lib/constraints";
 import { DEFAULT_SHOP_ACCESS_MAX_DIST, DEFAULT_NODE_MIN_SEP, DEFAULT_GRID_SIZE } from "@/validation/constants";
 import type { EditorMode, EditorPreferences } from "./editorTypes";
+import type { SuggestedImportAnnotations } from "@/api/graphApi";
 
 export type { EditorMode, EditorPreferences } from "./editorTypes";
 export { editorModes } from "./editorTypes";
@@ -61,6 +62,11 @@ export interface EditorState {
   mapTooltip: { text: string; clientX: number; clientY: number } | null;
   editorPreferences: EditorPreferences;
   isDirty: boolean;
+  /** PDF import suggestion (ghost overlay) — not saved until applied or merged. */
+  importOverlay: MapPayload | null;
+  /** v2 import: confidences, corridor meta (for overlay drawing). */
+  importOverlayMeta: SuggestedImportAnnotations | null;
+  importOverlayVisible: boolean;
   setContext: (orgId: string, mapId: string, name?: string) => void;
   /** Load from GET /graph — marks clean */
   hydrateGraph: (g: MapPayload) => void;
@@ -101,6 +107,12 @@ export interface EditorState {
   setPublishedVersion: (v: number | null) => void;
   markClean: () => void;
   markDirty: () => void;
+  setImportOverlay: (g: MapPayload | null) => void;
+  setImportOverlayMeta: (a: SuggestedImportAnnotations | null) => void;
+  setImportOverlayVisible: (v: boolean) => void;
+  clearImportOverlay: () => void;
+  /** Prefix suggested ids with `imp_` and merge into the current draft. */
+  applyImportOverlayToGraph: () => void;
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -135,6 +147,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     shopAccessMaxDist: DEFAULT_SHOP_ACCESS_MAX_DIST,
   },
   isDirty: false,
+  importOverlay: null,
+  importOverlayMeta: null,
+  importOverlayVisible: true,
 
   setContext: (orgId, mapId, name) => set({ orgId, mapId, mapName: name ?? "Map" }),
   hydrateGraph: (g) =>
@@ -146,6 +161,44 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       validationWarnings: [],
       selectedValidationIssueId: null,
     }),
+  setImportOverlay: (g) => set({ importOverlay: g }),
+  setImportOverlayMeta: (a) => set({ importOverlayMeta: a }),
+  setImportOverlayVisible: (v) => set({ importOverlayVisible: v }),
+  clearImportOverlay: () => set({ importOverlay: null, importOverlayMeta: null }),
+  applyImportOverlayToGraph: () => {
+    const g = get().graph;
+    const o = get().importOverlay;
+    if (!g || !o) return;
+    const p = (id: string) => `imp_${id}`;
+    const newNodes: GraphNode[] = o.nodes.map((n) => ({ ...n, id: p(n.id) }));
+    const newEdges: GraphEdge[] = o.edges.map((e) => ({
+      ...e,
+      from: p(e.from),
+      to: p(e.to),
+      edge_id: undefined,
+    }));
+    const newShops: MapShop[] = o.shops.map((s) => ({
+      ...s,
+      id: p(s.id),
+      location_node: p(s.location_node),
+    }));
+    const merged = buildPayload(g, {
+      nodes: [...g.nodes, ...newNodes],
+      edges: [...g.edges, ...newEdges],
+      shops: [...g.shops, ...newShops],
+    });
+    const prefs = get().editorPreferences;
+    const r = runGraphValidation(merged, { shopAccessMaxDist: prefs.shopAccessMaxDist });
+    set({
+      graph: merged,
+      isDirty: true,
+      importOverlay: null,
+      importOverlayMeta: null,
+      validationErrors: r.errors,
+      validationWarnings: r.warnings,
+      issues: r.issues,
+    });
+  },
   updateNode: (id, p) => {
     const g = get().graph;
     if (!g) return;

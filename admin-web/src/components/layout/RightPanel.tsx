@@ -1,6 +1,8 @@
 import { useEditorStore } from "@/store/editorStore";
 import { DEFAULT_SHOP_ACCESS_MAX_DIST } from "@/validation/constants";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getGraph, getPublicLiveEdges, patchEdgeLive } from "@/api/graphApi";
 
 export function RightPanel() {
   const graph = useEditorStore((s) => s.graph);
@@ -18,6 +20,54 @@ export function RightPanel() {
   const world = useEditorStore((s) => s.world);
   const editorPreferences = useEditorStore((s) => s.editorPreferences);
   const setEditorPreferences = useEditorStore((s) => s.setEditorPreferences);
+  const orgId = useEditorStore((s) => s.orgId);
+  const mapId = useEditorStore((s) => s.mapId);
+  const publishedVersion = useEditorStore((s) => s.publishedVersion);
+  const qc = useQueryClient();
+
+  const pubQ = useQuery({
+    queryKey: ["mapGraph", orgId, mapId, "published", publishedVersion],
+    queryFn: () => getGraph(orgId, mapId, "published"),
+    enabled: Boolean(orgId && mapId && publishedVersion != null && selectedEdgeKey),
+  });
+  const liveQ = useQuery({
+    queryKey: ["publicLiveEdges", mapId, publishedVersion],
+    queryFn: () => getPublicLiveEdges(mapId!),
+    enabled: Boolean(mapId && publishedVersion != null && selectedEdgeKey),
+  });
+
+  const pubEdge = pubQ.data?.edges.find(
+    (e) => [e.from, e.to].sort().join("::") === selectedEdgeKey
+  );
+  const liveRow = liveQ.data?.edges.find((l) => l.edge_id === pubEdge?.edge_id);
+  const [closed, setClosed] = useState(false);
+  const [crowd, setCrowd] = useState(1);
+  const [priority, setPriority] = useState(0);
+  useEffect(() => {
+    if (liveRow) {
+      setClosed(liveRow.is_closed);
+      setCrowd(liveRow.crowd_factor);
+      setPriority(liveRow.priority);
+    } else {
+      setClosed(false);
+      setCrowd(1);
+      setPriority(0);
+    }
+  }, [pubEdge?.edge_id, liveRow?.edge_id, liveRow?.updated_at]);
+
+  const saveLive = useMutation({
+    mutationFn: async () => {
+      if (!orgId || !mapId || !pubEdge?.edge_id) throw new Error("No published edge");
+      return patchEdgeLive(orgId, mapId, pubEdge.edge_id, {
+        is_closed: closed,
+        crowd_factor: crowd,
+        priority,
+      });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["publicLiveEdges", mapId] });
+    },
+  });
 
   const node = graph?.nodes.find((n) => n.id === selectedNodeId);
   const shop = graph?.shops.find((s) => s.id === selectedShopId);
@@ -77,6 +127,56 @@ export function RightPanel() {
           >
             Delete edge
           </button>
+          {publishedVersion != null && pubQ.isSuccess && (
+            <div className="edge-live-block">
+              <h4>Live routing (published graph)</h4>
+              {!pubEdge && (
+                <p className="small">
+                  This side does not exist on the published map (draft differs). Publish the draft to match.
+                </p>
+              )}
+              {pubEdge?.edge_id && (
+                <>
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={closed}
+                      onChange={(e) => setClosed(e.target.checked)}
+                    />
+                    Closed (blocked)
+                  </label>
+                  <label>
+                    Crowd factor ({crowd.toFixed(2)}×)
+                    <input
+                      type="range"
+                      min={0.5}
+                      max={3}
+                      step={0.05}
+                      value={crowd}
+                      onChange={(e) => setCrowd(Number(e.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Priority (negative = prefer)
+                    <input
+                      type="number"
+                      step={0.5}
+                      value={priority}
+                      onChange={(e) => setPriority(Number(e.target.value))}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="btn small"
+                    disabled={saveLive.isPending}
+                    onClick={() => void saveLive.mutateAsync()}
+                  >
+                    {saveLive.isPending ? "Saving…" : "Save live state"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </section>
       )}
 

@@ -9,5 +9,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ /app/src/
 
-# Default: API. Override for worker: CMD ["python", "-m", "venuenav.workers.map_worker"]
-CMD ["uvicorn", "venuenav.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Railway (and other PaaS) set PORT; default 8080 for local docker.
+# Override for worker: CMD ["python", "-m", "venuenav.workers.map_worker"]
+CMD ["/bin/sh", "-c", "exec uvicorn venuenav.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

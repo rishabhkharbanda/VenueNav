@@ -11,6 +11,7 @@ from venuenav.common.deps import DbSession
 from venuenav.common.errors import not_found
 from venuenav.common.redis_client import get_redis
 from venuenav.db.models import Event, MapVersion, VenueMap
+from venuenav.modules.graph import edge_live as edge_live_service
 from venuenav.modules.graph import service as graph_service
 from venuenav.modules.routing import service as route_service
 from venuenav.modules.search import service as search_service
@@ -88,6 +89,29 @@ def public_route_multi(
     return route_service.route_multi(
         db, m, mv, get_redis(), body.stop_node_ids, body.optimize
     )
+
+
+@router.get(
+    "/public/maps/{map_id}/live-edges",
+    response_model=dict,
+    tags=["Routing"],
+)
+def public_live_edges(map_id: uuid.UUID, db: DbSession) -> dict:
+    m = db.get(VenueMap, map_id)
+    if m is None or m.published_map_version_id is None:
+        raise not_found("Map")
+    mv = db.get(MapVersion, m.published_map_version_id)
+    if mv is None:
+        raise not_found("Version")
+    r = get_redis()
+    epoch = edge_live_service.get_live_epoch(r, m.id) if r else 0
+    rows = edge_live_service.list_live_for_version(db, mv.id)
+    return {
+        "map_id": str(m.id),
+        "map_version_id": str(mv.id),
+        "live_epoch": epoch,
+        "edges": [edge_live_service.live_row_to_dict(x) for x in rows],
+    }
 
 
 @router.get(

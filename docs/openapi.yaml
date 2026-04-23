@@ -125,6 +125,30 @@ components:
         weight:
           type: number
           description: Cost (distance or time).
+        edge_id:
+          type: string
+          format: uuid
+          description: Server graph_edge id (for live overrides and admin tools).
+    GraphEdgeLive:
+      type: object
+      required: [edge_id, crowd_factor, is_closed, priority, updated_at]
+      properties:
+        edge_id: { type: string, format: uuid }
+        crowd_factor: { type: number }
+        is_closed: { type: boolean }
+        priority: { type: number }
+        updated_at: { type: string, format: date-time }
+    LiveEdgesResponse:
+      type: object
+      required: [map_id, map_version_id, live_epoch, edges]
+      properties:
+        map_id: { type: string, format: uuid }
+        map_version_id: { type: string, format: uuid }
+        live_epoch: { type: integer }
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphEdgeLive'
     Shop:
       type: object
       required: [id, name, location_node]
@@ -448,6 +472,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/MapVersion'
 
+  /organizations/{org_id}/maps/{map_id}/edges/{edge_id}/live:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - $ref: '#/components/parameters/MapId'
+      - name: edge_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Graph]
+      summary: Update live routing overrides for a published graph edge
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                crowd_factor: { type: number, minimum: 0, exclusiveMinimum: true }
+                is_closed: { type: boolean }
+                priority: { type: number }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphEdgeLive'
+
   /public/events/{event_slug}/maps/{map_slug}:
     get:
       tags: [Maps]
@@ -558,6 +609,23 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/RouteResponse'
+
+  /public/maps/{map_id}/live-edges:
+    get:
+      tags: [Routing]
+      security: []
+      summary: List stored live routing overrides and current epoch
+      parameters:
+        - name: map_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveEdgesResponse'
 
   /public/maps/{map_id}/search:
     get:

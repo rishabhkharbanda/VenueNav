@@ -1,5 +1,6 @@
 import { useState, type RefObject } from "react";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useSearchShops } from "@/features/search/useSearchShops";
 import { useNavStore } from "@/store/navStore";
 import { shopCentroid } from "@/lib/graphModel";
@@ -15,7 +16,11 @@ export function SearchBar({ mapId, payload, canvasWrapRef }: Props) {
   const [open, setOpen] = useState(false);
   const [raw, setRaw] = useState("");
   const q = useDebounce(raw, 200);
-  const { data, isLoading, isError } = useSearchShops(mapId, q);
+  const { isOnline } = useNetworkStatus();
+  const { data, isLoading, isError } = useSearchShops(mapId, q, {
+    offline: !isOnline,
+    shops: payload?.shops,
+  });
   const setHighlight = useNavStore((s) => s.setSearchHighlightIds);
   const focus = useNavStore((s) => s.focusMapToPoint);
   const setSelected = useNavStore((s) => s.setSelectedShopId);
@@ -72,6 +77,7 @@ export function SearchBar({ mapId, payload, canvasWrapRef }: Props) {
       </div>
       {open && raw.trim().length > 0 && (
         <ul className="search-results" role="listbox">
+          {!isOnline && <li className="search-meta">Offline: local search in cached map data</li>}
           {isLoading && <li className="search-meta">Searching…</li>}
           {isError && <li className="search-err">Search failed</li>}
           {!isLoading && !isError && items.length === 0 && (

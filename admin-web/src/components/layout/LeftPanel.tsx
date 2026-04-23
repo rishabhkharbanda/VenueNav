@@ -1,6 +1,7 @@
 import { useEditorStore } from "@/store/editorStore";
 import type { RefObject } from "react";
 import { ValidationPanel } from "@/components/ui/ValidationPanel";
+import { ImportFromPdfPanel } from "@/components/ui/ImportFromPdfPanel";
 
 export function LeftPanel({ canvasWrapRef }: { canvasWrapRef: RefObject<HTMLDivElement | null> }) {
   const graph = useEditorStore((s) => s.graph);
@@ -11,6 +12,7 @@ export function LeftPanel({ canvasWrapRef }: { canvasWrapRef: RefObject<HTMLDivE
 
   return (
     <aside className="panel left">
+      <ImportFromPdfPanel />
       <h3>Shops</h3>
       <ul className="list">
         {graph.shops.map((s) => (

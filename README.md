@@ -11,6 +11,7 @@ Indoor event navigation: PDF map ingestion, graph-based routing, and interactive
 | [Database](docs/DATABASE.md) | Entity model, PostGIS usage, and migrations |
 | [Wireframes](docs/WIREFRAMES.md) | Admin and public app layouts and flows |
 | [Deployment](docs/DEPLOYMENT.md) | Environments, infrastructure, and operations |
+| [Observability (Railway)](docs/OBSERVABILITY_RAILWAY.md) | Logs, metrics, Sentry, health, alerts |
 
 ## Run locally
 

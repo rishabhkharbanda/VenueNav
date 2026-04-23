@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Double, ForeignKey, Text, Uuid, UniqueConstraint
+from datetime import datetime, timezone
+
 from geoalchemy2 import Geometry
+from sqlalchemy import Boolean, DateTime, Double, ForeignKey, Text, Uuid, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from venuenav.db.base import Base
@@ -53,3 +55,22 @@ class GraphEdge(Base):
     map_version: Mapped["MapVersion"] = relationship("MapVersion", back_populates="graph_edges")
     from_node: Mapped["GraphNode"] = relationship("GraphNode", foreign_keys=[from_node_id], back_populates="edges_from")
     to_node: Mapped["GraphNode"] = relationship("GraphNode", foreign_keys=[to_node_id], back_populates="edges_to")
+    live: Mapped["GraphEdgeLive | None"] = relationship(
+        "GraphEdgeLive", back_populates="edge", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class GraphEdgeLive(Base):
+    __tablename__ = "graph_edge_live"
+
+    graph_edge_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("graph_edge.id", ondelete="CASCADE"), primary_key=True
+    )
+    crowd_factor: Mapped[float] = mapped_column(Double, nullable=False, default=1.0)
+    is_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    priority: Mapped[float] = mapped_column(Double, nullable=False, default=0.0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+    edge: Mapped["GraphEdge"] = relationship("GraphEdge", back_populates="live")

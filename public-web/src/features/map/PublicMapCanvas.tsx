@@ -3,17 +3,18 @@ import { Application, Assets, Container, Graphics, Sprite, FederatedPointerEvent
 import { useNavStore } from "@/store/navStore";
 import { getFootprint, nearestNodeId } from "@/lib/graphModel";
 import { pickShopAt } from "@/lib/hitTest";
-import type { MapPayload, MapShop } from "@/types/map";
+import type { MapPayload, MapShop, PublicLiveEdgesResponse } from "@/types/map";
 
 const NODE_R = 4;
 
 type Props = {
   payload: MapPayload | null;
+  liveEdges: PublicLiveEdgesResponse | null;
   onSelectShop: (shop: MapShop) => void;
   onMapTapForStart?: (nodeId: string) => void;
 };
 
-export function PublicMapCanvas({ payload, onSelectShop, onMapTapForStart }: Props) {
+export function PublicMapCanvas({ payload, liveEdges, onSelectShop, onMapTapForStart }: Props) {
   const divRef = useRef<HTMLDivElement>(null);
   const layersRef = useRef<{
     world: Container | null;
@@ -25,7 +26,9 @@ export function PublicMapCanvas({ payload, onSelectShop, onMapTapForStart }: Pro
   const lastPanRef = useRef<{ x: number; y: number } | null>(null);
   const appRef = useRef<Application | null>(null);
   const payloadRef = useRef<MapPayload | null>(null);
+  const liveRef = useRef<PublicLiveEdgesResponse | null>(null);
   payloadRef.current = payload;
+  liveRef.current = liveEdges;
 
   const redraw = useCallback(() => {
     const L = layersRef.current;
@@ -33,6 +36,14 @@ export function PublicMapCanvas({ payload, onSelectShop, onMapTapForStart }: Pro
     if (!world || !L.gEdges || !L.gShops || !L.gNodes || !L.gRoute) return;
     const g = payloadRef.current;
     if (!g) return;
+
+    const liveBy = new Map<string, { is_closed: boolean; crowd_factor: number }>();
+    const le = liveRef.current;
+    if (le) {
+      for (const x of le.edges) {
+        liveBy.set(x.edge_id, { is_closed: x.is_closed, crowd_factor: x.crowd_factor });
+      }
+    }
 
     const st = useNavStore.getState();
     const {
@@ -56,7 +67,17 @@ export function PublicMapCanvas({ payload, onSelectShop, onMapTapForStart }: Pro
         if (!a || !b) continue;
         gEdges.moveTo(a.x, a.y);
         gEdges.lineTo(b.x, b.y);
-        gEdges.stroke({ width: 1, color: 0x334155, alpha: 0.45 });
+        const o = e.edge_id ? liveBy.get(e.edge_id) : undefined;
+        let color = 0x334155;
+        let w = 1;
+        if (o?.is_closed) {
+          color = 0xef4444;
+          w = 2.4;
+        } else if (o && o.crowd_factor > 1.08) {
+          color = 0xf97316;
+          w = 1.8;
+        }
+        gEdges.stroke({ width: w, color, alpha: o?.is_closed ? 0.9 : 0.5 });
       }
     }
 
@@ -131,7 +152,7 @@ export function PublicMapCanvas({ payload, onSelectShop, onMapTapForStart }: Pro
 
   useEffect(() => {
     redraw();
-  }, [payload, redraw]);
+  }, [payload, liveEdges, redraw]);
 
   useEffect(() => {
     const el = divRef.current;

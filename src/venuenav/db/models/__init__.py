@@ -1,4 +1,4 @@
-from venuenav.db.models.graph import GraphEdge, GraphNode
+from venuenav.db.models.graph import GraphEdge, GraphEdgeLive, GraphNode
 from venuenav.db.models.job import MapProcessingJob
 from venuenav.db.models.map import MapAsset, VenueMap
 from venuenav.db.models.map_version import MapVersion
@@ -11,6 +11,7 @@ __all__ = [
     "AppUser",
     "Event",
     "GraphEdge",
+    "GraphEdgeLive",
     "GraphNode",
     "MapAsset",
     "MapProcessingJob",

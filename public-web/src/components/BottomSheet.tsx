@@ -3,11 +3,15 @@ import { useNavStore } from "@/store/navStore";
 import { findEntranceNode } from "@/lib/graphModel";
 import { formatDistance, formatDuration, estimateWalkSeconds } from "@/lib/routeFormat";
 import { getPublicRoute, postMultiRoute } from "@/api/publicApi";
-import { useState } from "react";
+import { routeOfflineStops } from "@/pwa/offlineRouting";
+import { buildDirectionSteps } from "@/navigation/directionEngine";
+import { TurnByTurnList } from "@/components/TurnByTurnList";
+import { useMemo, useState } from "react";
 
 type Props = {
   mapId: string;
   payload: MapPayload;
+  isOnline: boolean;
 };
 
 function metaLine(shop: MapShop) {
@@ -27,7 +31,11 @@ function metaLine(shop: MapShop) {
   );
 }
 
-export function BottomSheet({ mapId, payload }: Props) {
+function stopsKey(nodes: string[]) {
+  return nodes.join("|");
+}
+
+export function BottomSheet({ mapId, payload, isOnline }: Props) {
   const ent = findEntranceNode(payload.nodes);
   const selectedId = useNavStore((s) => s.selectedShopId);
   const shop = selectedId ? payload.shops.find((s) => s.id === selectedId) : null;
@@ -41,11 +49,26 @@ export function BottomSheet({ mapId, payload }: Props) {
   const addVisit = useNavStore((s) => s.addVisitStop);
   const clearVisit = useNavStore((s) => s.clearVisit);
   const setRoute = useNavStore((s) => s.setRoute);
+  const setRouteSession = useNavStore((s) => s.setRouteSession);
   const setErr = useNavStore((s) => s.setRouteError);
+  const setErrMsg = useNavStore((s) => s.setRouteErrorMessage);
+  const setLastBackup = useNavStore((s) => s.setLastRouteBackup);
+  const lastRouteBackup = useNavStore((s) => s.lastRouteBackup);
+  const setRouteRefreshMessage = useNavStore((s) => s.setRouteRefreshMessage);
+  const routeRefreshMessage = useNavStore((s) => s.routeRefreshMessage);
   const routeNodes = useNavStore((s) => s.routeNodes);
   const routeCost = useNavStore((s) => s.routeTotalCost);
   const routeError = useNavStore((s) => s.routeError);
+  const routePathSignature = useNavStore((s) => s.routeSession?.pathSignature ?? null);
   const [loading, setLoading] = useState(false);
+
+  const directionSteps = useMemo(
+    () =>
+      routeNodes && routeNodes.length > 0
+        ? buildDirectionSteps(routeNodes, payload, { destinationShopName: shop?.name ?? null })
+        : [],
+    [routeNodes, payload, shop?.name]
+  );
 
   const effectiveStart = (): string | null => {
     if (startPref === "map") {
@@ -53,6 +76,45 @@ export function BottomSheet({ mapId, payload }: Props) {
       return startId;
     }
     return ent?.id ?? null;
+  };
+
+  const applySuccess = (
+    fullStops: string[],
+    nodes: string[],
+    totalCost: number,
+    edgeIds: string[],
+    pathSignature: string
+  ) => {
+    const key = stopsKey(fullStops);
+    setRoute(nodes, totalCost);
+    setRouteSession({
+      stopNodes: fullStops,
+      edgeIds,
+      pathSignature,
+      totalCost,
+    });
+    setLastBackup({
+      stopsKey: key,
+      nodes,
+      cost: totalCost,
+      edgeIds,
+    });
+  };
+
+  const tryOfflineRoute = (fullStops: string[], hint: string) => {
+    setErrMsg(null);
+    const local = routeOfflineStops(payload, fullStops);
+    if (!local) {
+      setErr("No path found on the cached map. Try different stops.");
+      return;
+    }
+    const pathSignature = local.nodes.join(",");
+    applySuccess(fullStops, local.nodes, local.totalCost, local.edgeIds, pathSignature);
+    if (hint) {
+      setRouteRefreshMessage(hint);
+    } else {
+      setRouteRefreshMessage(null);
+    }
   };
 
   const onNavigate = async () => {
@@ -71,28 +133,64 @@ export function BottomSheet({ mapId, payload }: Props) {
     }
     setLoading(true);
     setErr(null);
+    const chain: string[] = visit.length ? [...visit, destId] : [destId];
+    const dedup: string[] = [];
+    for (const id of chain) {
+      if (dedup[dedup.length - 1] !== id) dedup.push(id);
+    }
+    const fullStops: string[] = [from, ...dedup].filter(
+      (id, i, a) => i === 0 || id !== a[i - 1]
+    ) as string[];
+    if (fullStops.length < 2) {
+      setErr("Not enough points for a route");
+      setLoading(false);
+      return;
+    }
+    const key = stopsKey(fullStops);
+
     try {
-      const chain: string[] = visit.length ? [...visit, destId] : [destId];
-      const dedup: string[] = [];
-      for (const id of chain) {
-        if (dedup[dedup.length - 1] !== id) dedup.push(id);
-      }
-      const fullStops: string[] = [from, ...dedup].filter(
-        (id, i, a) => i === 0 || id !== a[i - 1]
-      ) as string[];
-      if (fullStops.length < 2) {
-        setErr("Not enough points for a route");
+      if (!isOnline) {
+        tryOfflineRoute(
+          fullStops,
+          "You’re offline — route uses the cached map. Live path updates are off."
+        );
         return;
       }
+
       if (fullStops.length === 2) {
         const r = await getPublicRoute(mapId, fullStops[0]!, fullStops[1]!);
-        setRoute(r.nodes, r.total_cost);
+        const ps = r.nodes.join(",");
+        applySuccess(fullStops, r.nodes, r.total_cost, r.edge_ids, ps);
       } else {
         const r = await postMultiRoute(mapId, fullStops, false);
-        setRoute(r.nodes, r.total_cost);
+        const ps = r.nodes.join(",");
+        applySuccess(fullStops, r.nodes, r.total_cost, r.edge_ids, ps);
       }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Route failed");
+      const msg = e instanceof Error ? e.message : "Route failed";
+      if (lastRouteBackup && lastRouteBackup.stopsKey === key) {
+        setRoute(lastRouteBackup.nodes, lastRouteBackup.cost);
+        setRouteSession({
+          stopNodes: fullStops,
+          edgeIds: lastRouteBackup.edgeIds,
+          pathSignature: lastRouteBackup.nodes.join(","),
+          totalCost: lastRouteBackup.cost,
+        });
+        setErrMsg(
+          `${msg} Showing your last known route. Tap Navigate to retry, or go offline to use the cached graph.`
+        );
+      } else {
+        const local = routeOfflineStops(payload, fullStops);
+        if (local) {
+          const ps = local.nodes.join(",");
+          applySuccess(fullStops, local.nodes, local.totalCost, local.edgeIds, ps);
+          setErrMsg(
+            `Could not reach the server (${msg}). Route from cached map; live updates unavailable.`
+          );
+        } else {
+          setErr(msg);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -196,6 +294,12 @@ export function BottomSheet({ mapId, payload }: Props) {
 
       {routeError && <p className="err-msg">{routeError}</p>}
 
+      {routeRefreshMessage && (
+        <p className="small route-refresh-hint" role="status">
+          {routeRefreshMessage}
+        </p>
+      )}
+
       {routeNodes && routeNodes.length > 0 && !routeError && (
         <div className="route-details">
           <h3>Route</h3>
@@ -203,6 +307,10 @@ export function BottomSheet({ mapId, payload }: Props) {
             <strong>{distText}</strong> · {timeText} est.
           </p>
         </div>
+      )}
+
+      {routeNodes && routeNodes.length > 0 && !routeError && directionSteps.length > 0 && (
+        <TurnByTurnList steps={directionSteps} pathSignature={routePathSignature} />
       )}
     </div>
   );

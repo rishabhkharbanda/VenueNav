@@ -1,5 +1,12 @@
 import { apiFetch } from "@/api/client";
-import type { MapPayload, PublicMapMeta, SearchResponse, RouteResponse, MultiRouteResponse } from "@/types/map";
+import type {
+  MapPayload,
+  PublicMapMeta,
+  PublicLiveEdgesResponse,
+  SearchResponse,
+  RouteResponse,
+  MultiRouteResponse,
+} from "@/types/map";
 
 export async function getPublicMapMeta(eventSlug: string, mapSlug: string): Promise<PublicMapMeta> {
   const r = await apiFetch(`/v1/public/events/${encodeURIComponent(eventSlug)}/maps/${encodeURIComponent(mapSlug)}`);
@@ -59,6 +66,12 @@ export async function postMultiRoute(
     method: "POST",
     json: { stop_node_ids: stopNodeIds, optimize },
   });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function getPublicLiveEdges(mapId: string): Promise<PublicLiveEdgesResponse> {
+  const r = await apiFetch(`/v1/public/maps/${mapId}/live-edges`);
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }

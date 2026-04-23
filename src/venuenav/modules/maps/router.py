@@ -11,11 +11,14 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 from venuenav.common.dtos import MapPayloadDTO, MapVersionDTO, ShopDTO, RouteResponseDTO
 from venuenav.common.deps import DbSession, UserId, get_org_if_member, require_org_editor, require_org_member
-from venuenav.common.errors import not_found
+from venuenav.common.errors import http_error, not_found
 from venuenav.config.settings import get_settings
 from venuenav.db.models import (
     Event,
+    GraphEdge,
     GraphNode,
+    GraphEdgeLive,
+    MapAsset,
     MapProcessingJob,
     MapVersion,
     Shop,
@@ -23,9 +26,10 @@ from venuenav.db.models import (
     Venue,
     VenueMap,
 )
+from venuenav.modules.graph import edge_live as edge_live_service
 from venuenav.modules.graph import service as graph_service
 from venuenav.modules.routing import service as route_service
-from venuenav.modules.routing.cache import payload_cache_get, payload_cache_set, payload_key
+from venuenav.modules.routing.cache import graph_cache, payload_cache_get, payload_cache_set, payload_key
 from venuenav.modules.search import service as search_service
 from venuenav.modules.uploads import service as upload_service
 from venuenav.common.redis_client import get_redis
@@ -313,6 +317,40 @@ def get_job(
 
 
 @router.get(
+    "/organizations/{org_id}/maps/{map_id}/import-artifact",
+    response_model=dict,
+    tags=["Processing"],
+)
+def get_import_artifact(
+    org_id: uuid.UUID,
+    map_id: uuid.UUID,
+    db: DbSession,
+    user_id: UserId,
+) -> dict:
+    """
+    Returns the last PDF-import pipeline output (OCR, suggested graph, zones) stored
+    on the most recent raster asset. Null if not processed yet.
+    """
+    get_org_if_member(db, org_id, user_id)
+    m = _map_in_org(db, org_id, map_id)
+    row = (
+        db.execute(
+            select(MapAsset)
+            .where(MapAsset.map_id == m.id, MapAsset.kind == "raster")
+            .order_by(MapAsset.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if not row or not row.meta or "import_artifact" not in row.meta:
+        return {
+            "artifact": None,
+            "raster_url": row.storage_url if row else None,
+        }
+    return {"artifact": row.meta.get("import_artifact"), "raster_url": row.storage_url}
+
+
+@router.get(
     "/organizations/{org_id}/maps/{map_id}/graph",
     response_model=MapPayloadDTO,
     tags=["Graph"],
@@ -365,6 +403,64 @@ def put_graph(
     return {"ok": True}
 
 
+class EdgeLivePatchBody(BaseModel):
+    crowd_factor: float | None = None
+    is_closed: bool | None = None
+    priority: float | None = None
+
+
+@router.patch(
+    "/organizations/{org_id}/maps/{map_id}/edges/{edge_id}/live",
+    response_model=dict,
+    tags=["Graph"],
+)
+def patch_edge_live(
+    org_id: uuid.UUID,
+    map_id: uuid.UUID,
+    edge_id: uuid.UUID,
+    db: DbSession,
+    user_id: UserId,
+    body: EdgeLivePatchBody = Body(...),
+) -> dict:
+    m_ = require_org_member(db, org_id, user_id)
+    require_org_editor(m_)
+    m = _map_in_org(db, org_id, map_id)
+    if m.published_map_version_id is None:
+        raise not_found("Published map")
+    e = db.get(GraphEdge, edge_id)
+    if e is None or e.map_version_id != m.published_map_version_id:
+        raise not_found("Edge")
+    if body.crowd_factor is None and body.is_closed is None and body.priority is None:
+        raise http_error("No live fields to update", "BAD_REQUEST", 400)
+    if body.crowd_factor is not None and body.crowd_factor <= 0:
+        raise http_error("crowd_factor must be > 0", "BAD_REQUEST", 400)
+    now = datetime.now(timezone.utc)
+    row = db.get(GraphEdgeLive, edge_id)
+    if row is None:
+        row = GraphEdgeLive(
+            graph_edge_id=edge_id,
+            crowd_factor=1.0,
+            is_closed=False,
+            priority=0.0,
+            updated_at=now,
+        )
+        db.add(row)
+    if body.crowd_factor is not None:
+        row.crowd_factor = float(body.crowd_factor)
+    if body.is_closed is not None:
+        row.is_closed = bool(body.is_closed)
+    if body.priority is not None:
+        row.priority = float(body.priority)
+    row.updated_at = now
+    m.updated_at = now
+    r = _rconn()
+    if r:
+        edge_live_service.bump_live_epoch(r, m.id)
+    graph_cache.invalidate_map(m.id)
+    db.commit()
+    return edge_live_service.live_row_to_dict(row)
+
+
 @router.post(
     "/organizations/{org_id}/maps/{map_id}/publish",
     response_model=MapVersionDTO,
@@ -387,6 +483,8 @@ def post_publish(
     new_mv = graph_service.publish_draft(db, m, d)
     r = _rconn()
     s = get_settings()
+    if r:
+        edge_live_service.bump_live_epoch(r, m.id)
     pld = graph_service.public_payload_dict(db, m, new_mv)
     if r:
         payload_cache_set(r, payload_key(m.id, new_mv.version), pld, s.payload_cache_ttl_seconds)

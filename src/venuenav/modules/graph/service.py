@@ -12,7 +12,8 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from venuenav.common.dtos import GraphEdgeDTO, GraphNodeDTO, MapPayloadDTO, ShopDTO
-from venuenav.db.models import GraphEdge, GraphNode, MapAsset, MapVersion, Shop, ShopTag, VenueMap
+from venuenav.db.models import GraphEdge, GraphEdgeLive, GraphNode, MapAsset, MapVersion, Shop, ShopTag, VenueMap
+from venuenav.modules.graph import edge_live as edge_live_service
 from venuenav.modules.routing.cache import graph_cache
 
 
@@ -75,7 +76,11 @@ def load_map_payload(db: Session, m: VenueMap, map_version: MapVersion, raster_u
         te = ext_by_id.get(e.to_node_id)
         if not fe or not te:
             continue
-        edge_dtos.append(GraphEdgeDTO.model_validate({"from": fe, "to": te, "weight": e.weight}))
+        edge_dtos.append(
+            GraphEdgeDTO.model_validate(
+                {"from": fe, "to": te, "weight": e.weight, "edge_id": str(e.id)}
+            )
+        )
 
     shop_rows = list(db.execute(select(Shop).where(Shop.map_version_id == map_version.id)).scalars().all())
     tag_map: dict[UUID, list[str]] = {s.id: [] for s in shop_rows}
@@ -227,11 +232,13 @@ def publish_draft(db: Session, m: VenueMap, draft: MapVersion) -> MapVersion:
         )
     db.flush()
 
-    for e in (
+    old_edges = list(
         db.execute(select(GraphEdge).where(GraphEdge.map_version_id == draft.id))
         .scalars()
         .all()
-    ):
+    )
+    ext_old: dict[UUID, str] = {n.id: n.external_id for n in old_nodes}
+    for e in old_edges:
         fn, tn = id_map.get(e.from_node_id), id_map.get(e.to_node_id)
         if not fn or not tn:
             continue
@@ -243,6 +250,51 @@ def publish_draft(db: Session, m: VenueMap, draft: MapVersion) -> MapVersion:
                 to_node_id=tn,
                 weight=e.weight,
                 path=e.path,
+            )
+        )
+    db.flush()
+    new_nodes = list(
+        db.execute(select(GraphNode).where(GraphNode.map_version_id == new_mv.id))
+        .scalars()
+        .all()
+    )
+    ext_new: dict[UUID, str] = {n.id: n.external_id for n in new_nodes}
+    new_edge_rows = list(
+        db.execute(select(GraphEdge).where(GraphEdge.map_version_id == new_mv.id))
+        .scalars()
+        .all()
+    )
+    pair_to_new: dict[tuple[str, str], uuid.UUID] = {}
+    for ne in new_edge_rows:
+        a = ext_new.get(ne.from_node_id)
+        b = ext_new.get(ne.to_node_id)
+        if a and b:
+            pair_to_new[(a, b)] = ne.id
+    old_eids = [e.id for e in old_edges]
+    old_lives = (
+        db.execute(select(GraphEdgeLive).where(GraphEdgeLive.graph_edge_id.in_(old_eids)))
+        .scalars()
+        .all()
+        if old_eids
+        else []
+    )
+    for lv in old_lives:
+        oe = next((x for x in old_edges if x.id == lv.graph_edge_id), None)
+        if oe is None:
+            continue
+        oa, ob = ext_old.get(oe.from_node_id), ext_old.get(oe.to_node_id)
+        if not oa or not ob:
+            continue
+        nuid = pair_to_new.get((oa, ob))
+        if nuid is None:
+            continue
+        db.add(
+            GraphEdgeLive(
+                graph_edge_id=nuid,
+                crowd_factor=lv.crowd_factor,
+                is_closed=lv.is_closed,
+                priority=lv.priority,
+                updated_at=datetime.now(timezone.utc),
             )
         )
 
@@ -304,12 +356,22 @@ def load_payload_for_routing(
         coords[n.external_id] = (x, y)
     edges: list[tuple[str, str, float, str | None]] = []
     ext_by: dict[UUID, str] = {n.id: n.external_id for n in nodes}
-    for e in (
+    edge_rows = (
         db.execute(select(GraphEdge).where(GraphEdge.map_version_id == map_version.id))
         .scalars()
         .all()
-    ):
+    )
+    eids = [e.id for e in edge_rows]
+    live_by = edge_live_service.load_live_by_edge_ids(db, eids)
+    for e in edge_rows:
         a, b = ext_by.get(e.from_node_id), ext_by.get(e.to_node_id)
-        if a and b:
-            edges.append((a, b, e.weight, str(e.id)))
+        if not a or not b:
+            continue
+        lv = live_by.get(e.id)
+        eff = edge_live_service.effective_routing_weight(e.weight, lv)
+        if eff is None:
+            continue
+        if eff <= 0:
+            continue
+        edges.append((a, b, eff, str(e.id)))
     return edges, coords

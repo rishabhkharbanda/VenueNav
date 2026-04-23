@@ -72,3 +72,37 @@ def presign_pdf_upload(db: Session, m: VenueMap, content_type: str, byte_size: i
     db.commit()
     db.refresh(row)
     return {"upload_url": url, "asset_id": asset_id, "headers": {"Content-Type": content_type}}
+
+
+def put_raster_png(
+    db: Session,
+    m: VenueMap,
+    png_bytes: bytes,
+    meta: dict,
+) -> MapAsset:
+    """Server-side upload of a generated raster to object storage; returns persisted asset row."""
+    ensure_bucket()
+    s = get_settings()
+    asset_id = uuid.uuid4()
+    key = f"maps/{m.id}/{asset_id}.png"
+    c = _client()
+    c.put_object(
+        Bucket=s.s3_bucket,
+        Key=key,
+        Body=png_bytes,
+        ContentType="image/png",
+    )
+    public_url = _publicize_url(f"{s.s3_endpoint_url.rstrip('/')}/{s.s3_bucket}/{key}")
+    row = MapAsset(
+        id=asset_id,
+        map_id=m.id,
+        kind="raster",
+        storage_url=public_url,
+        byte_size=len(png_bytes),
+        meta=meta,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row

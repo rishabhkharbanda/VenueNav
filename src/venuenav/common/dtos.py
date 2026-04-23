@@ -23,8 +23,17 @@ class GraphEdgeDTO(BaseModel):
     from_: str = Field(validation_alias="from", serialization_alias="from")
     to: str
     weight: float
+    edge_id: str | None = None
 
     model_config = {"populate_by_name": True}
+
+
+class GraphEdgeLiveDTO(BaseModel):
+    edge_id: str
+    crowd_factor: float
+    is_closed: bool
+    priority: float
+    updated_at: datetime
 
 
 class ShopDTO(BaseModel):
