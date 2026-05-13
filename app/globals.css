@@ -1,0 +1,16 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+.hand-video {
+  position: absolute;
+  inset: 0;
+  transform: scaleX(-1);
+}

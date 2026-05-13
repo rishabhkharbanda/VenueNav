@@ -1,1 +1,0 @@
-"""VenueNav backend package."""

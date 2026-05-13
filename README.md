@@ -1,56 +1,56 @@
-# VenueNav
+# Hand gesture drawing (Next.js + MediaPipe)
 
-Indoor event navigation: PDF map ingestion, graph-based routing, and interactive maps for web and mobile.
+Minimal module: webcam background, index-finger air drawing on a canvas overlay.
 
-## Documentation
+## Setup
 
-| Document | Description |
-|----------|-------------|
-| [Architecture](docs/ARCHITECTURE.md) | Services, data flow, scaling, and performance |
-| [API](docs/openapi.yaml) | REST API (OpenAPI 3) |
-| [Database](docs/DATABASE.md) | Entity model, PostGIS usage, and migrations |
-| [Wireframes](docs/WIREFRAMES.md) | Admin and public app layouts and flows |
-| [Deployment](docs/DEPLOYMENT.md) | Environments, infrastructure, and operations |
-| [Observability (Railway)](docs/OBSERVABILITY_RAILWAY.md) | Logs, metrics, Sentry, health, alerts |
-
-## Run locally
-
-### Docker (recommended)
-
-Requires [Docker](https://docs.docker.com/get-docker/) and Docker Compose.
+1. **Install dependencies** (Node 18+ recommended):
 
 ```bash
-docker compose up --build
+npm install
 ```
 
-- API: `http://localhost:8080` (OpenAPI: `/docs`)
-- Postgres, Redis, MinIO, and the map worker start with the stack.
-
-### Python venv (API only)
-
-Use **Python 3.12+** (3.14 works with current dependency pins). PostgreSQL and Redis must be running and match `DATABASE_URL` / `REDIS_URL`.
+2. **Run the dev server**:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-export PYTHONPATH=src
-uvicorn venuenav.main:app --host 127.0.0.1 --port 8080
+npm run dev
 ```
 
-- Health: `GET http://127.0.0.1:8080/health`
-- API routes are under `/v1/...` (e.g. `/v1/organizations`).
+Open [http://localhost:3000](http://localhost:3000).
 
-If MinIO is not running, startup logs a warning but the process still serves traffic.
+3. **Camera permissions**
 
-## Database
+- The browser will prompt for **camera** access when the page loads (MediaPipe `Camera` uses `getUserMedia` under the hood).
+- Use **Chrome or Edge** for best WebGL + WASM performance.
+- **HTTPS or localhost** is required for camera APIs in most browsers.
+- If the prompt was denied, reset the site permission in the browser lock icon → Site settings → Camera → Allow, then reload.
 
-PostgreSQL 15+ with PostGIS. Apply migrations in order:
+4. **Network**
 
-```bash
-psql "$DATABASE_URL" -f sql/001_init.sql
-```
+- MediaPipe `.wasm` / binary assets load from **jsDelivr** (`locateFile` in `HandTracker.tsx`). The machine needs outbound HTTPS to that CDN (or change `locateFile` to serve files from `/public`).
 
-## License
+## Project layout
 
-Proprietary (update as needed).
+| Path | Role |
+|------|------|
+| `app/page.tsx` | Server entry; `dynamic(..., { ssr: false })` so webcam/MediaPipe never run on the server |
+| `components/App.tsx` | Gesture state machine, stroke refs, minimal overlay UI |
+| `components/HandTracker.tsx` | Webcam + MediaPipe Hands + smoothed index tip |
+| `components/DrawingCanvas.tsx` | `requestAnimationFrame` render loop, glowing strokes |
+| `lib/gestureDetection.ts` | “Index raised” heuristic + mirror X for selfie view |
+| `lib/smoothing.ts` | EMA + Chaikin-style polyline smoothing for display |
+
+## How gesture detection works
+
+1. **Landmarks**: MediaPipe outputs 21 normalized points per hand. We use **index MCP (5)**, **PIP (6)**, and **tip (8)**.
+
+2. **“Index raised” (drawing mode)**: We treat the index as extended when the tip is farther from the MCP than the PIP is (`distance(tip, MCP) > ratio × distance(PIP, MCP)`), combined with a minimum **hand scale** (wrist → middle MCP distance) to ignore tiny jitter when the hand is far or poorly detected.
+
+3. **Pointer**: The draw position is the **index tip**, with **X mirrored** (`1 - x`) so the stroke lines up with the horizontally flipped webcam preview.
+
+4. **Stroke lifecycle**: **Idle → Drawing** starts a new stroke; while drawing we append EMA-smoothed points (minimum spacing in normalized space); **Drawing → Idle** commits the stroke to the completed list.
+
+## Performance notes
+
+- Hand inference runs on MediaPipe’s internal scheduling; the **canvas** redraw uses **`requestAnimationFrame`** and reads only refs (no per-frame React state).
+- UI badge state is **coalesced to one update per animation frame** to avoid React thrash.
