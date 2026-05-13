@@ -15,3 +15,13 @@ export function commitActiveStroke(
   strokesRef.current = [...strokesRef.current, cur];
   return cur;
 }
+
+/**
+ * Takes the active stroke for processing (e.g. rain spawn) without keeping it on the 2D canvas.
+ */
+export function takeActiveStroke(currentStrokeRef: MutableRefObject<Point2[]>): Point2[] | null {
+  const cur = currentStrokeRef.current;
+  currentStrokeRef.current = [];
+  if (cur.length <= 1) return null;
+  return cur;
+}

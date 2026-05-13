@@ -174,29 +174,36 @@ export function GlassHud({
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            style={{
-              marginTop: 12,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              fontSize: 12,
-              opacity: 0.88,
-            }}
+            style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}
           >
-            <span
+            <div
               style={{
-                width: 10,
-                height: 10,
-                borderRadius: 999,
-                background: gestureUi.tracking ? "#4ade80" : "#64748b",
-                boxShadow: gestureUi.tracking ? "0 0 14px rgba(74,222,128,0.85)" : "none",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                fontSize: 12,
+                opacity: 0.88,
               }}
-            />
-            <span>{gestureUi.tracking ? "Hand locked" : "Searching…"}</span>
-            <span style={{ opacity: 0.35 }}>·</span>
-            <span style={{ color: gestureUi.drawing ? "#5eead4" : "#94a3b8" }}>
-              {gestureUi.drawing ? "Drawing" : "Idle"}
-            </span>
+            >
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 999,
+                  background: gestureUi.tracking ? "#4ade80" : "#64748b",
+                  boxShadow: gestureUi.tracking ? "0 0 14px rgba(74,222,128,0.85)" : "none",
+                }}
+              />
+              <span>{gestureUi.tracking ? "Hand locked" : "Searching…"}</span>
+              <span style={{ opacity: 0.35 }}>·</span>
+              <span style={{ color: gestureUi.drawing ? "#5eead4" : "#94a3b8" }}>
+                {gestureUi.drawing ? "Drawing" : "Idle"}
+              </span>
+            </div>
+            <p style={{ margin: 0, fontSize: 12, opacity: 0.78, lineHeight: 1.45 }}>
+              Raise index to draw, lower to drop. Same shape hints as mouse: closed tall loop ≈ red hearts;
+              dense closed loop ≈ gold stars.
+            </p>
           </motion.div>
         ) : (
           <motion.p
@@ -204,7 +211,9 @@ export function GlassHud({
             animate={{ opacity: 1, y: 0 }}
             style={{ margin: "12px 0 0", fontSize: 12, opacity: 0.82 }}
           >
-            Click-drag anywhere to sketch. Each release drops a new mesh into the rain field.
+            Click-drag to sketch, then release. A closed, taller loop tends to read as a{" "}
+            <strong style={{ color: "#fecaca" }}>heart</strong> (red shower); a bushy closed loop as a{" "}
+            <strong style={{ color: "#fde047" }}>star</strong>. Otherwise you get your stroke as a 3D ribbon.
           </motion.p>
         )}
 

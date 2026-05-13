@@ -11,7 +11,7 @@ export type RainItem = {
 
 export type InputMode = "gesture" | "mouse";
 
-const MAX_RAIN = 34;
+const MAX_RAIN = 200;
 
 type ExperienceState = {
   inputMode: InputMode;
@@ -19,7 +19,7 @@ type ExperienceState = {
   rain: RainItem[];
   setInputMode: (mode: InputMode) => void;
   setTheme: (theme: ThemeId) => void;
-  spawnRain: (geometry: ExtrudeGeometry) => void;
+  spawnRain: (geometry: ExtrudeGeometry, color?: string) => void;
   clearRain: () => void;
 };
 
@@ -36,8 +36,8 @@ export const useExperienceStore = create<ExperienceState>((set, get) => ({
 
   setTheme: (theme) => set({ theme }),
 
-  spawnRain: (geometry) => {
-    const color = randomAccent(get().theme);
+  spawnRain: (geometry, colorOverride) => {
+    const color = colorOverride ?? randomAccent(get().theme);
     set((s) => {
       const next: RainItem[] = [
         ...s.rain,

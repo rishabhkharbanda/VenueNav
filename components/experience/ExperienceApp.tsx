@@ -8,8 +8,8 @@ import { MouseDrawInput } from "@/components/experience/MouseDrawInput";
 import { GlassHud } from "@/components/experience/GlassHud";
 import type { Point2 } from "@/lib/geometry";
 import { dist2 } from "@/lib/geometry";
-import { commitActiveStroke } from "@/lib/strokeCommit";
-import { createStrokeExtrudeGeometry } from "@/lib/strokeToMesh";
+import { takeActiveStroke } from "@/lib/strokeCommit";
+import { buildRainDropsFromStroke } from "@/lib/shapeRain";
 import { playSpawnSound, resumeAudio } from "@/lib/soundKit";
 import { useExperienceStore } from "@/store/experienceStore";
 
@@ -22,7 +22,7 @@ function appendIfFarEnough(stroke: Point2[], p: Point2) {
 
 /**
  * Integrated experience: rain field (R3F) + stroke input (gesture or mouse) + glass HUD.
- * New strokes → `createStrokeExtrudeGeometry` → `spawnRain` in the Zustand store.
+ * Finished strokes → `buildRainDropsFromStroke` (shape guess + clones) → `spawnRain`.
  */
 export default function ExperienceApp() {
   const inputMode = useExperienceStore((s) => s.inputMode);
@@ -49,8 +49,12 @@ export default function ExperienceApp() {
   const pushStrokeIntoRain = useCallback(
     (stroke: Point2[]) => {
       resumeAudio();
-      const geometry = createStrokeExtrudeGeometry(stroke);
-      spawnRain(geometry);
+      const activeTheme = useExperienceStore.getState().theme;
+      const drops = buildRainDropsFromStroke(stroke, activeTheme);
+      for (const d of drops) {
+        spawnRain(d.geometry, d.color);
+      }
+      strokesRef.current = [];
       playSpawnSound();
     },
     [spawnRain],
@@ -82,7 +86,7 @@ export default function ExperienceApp() {
           appendIfFarEnough(currentStrokeRef.current, indexTipNorm);
         }
       } else if (was && !isDrawing) {
-        const stroke = commitActiveStroke(strokesRef, currentStrokeRef);
+        const stroke = takeActiveStroke(currentStrokeRef);
         if (stroke) pushStrokeIntoRain(stroke);
       }
     },
@@ -136,7 +140,6 @@ export default function ExperienceApp() {
 
         <MouseDrawInput
           active={inputMode === "mouse"}
-          strokesRef={strokesRef}
           currentStrokeRef={currentStrokeRef}
           onStrokeComplete={pushStrokeIntoRain}
         />

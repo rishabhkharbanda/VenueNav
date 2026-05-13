@@ -4,13 +4,12 @@ import type { MutableRefObject } from "react";
 import { useCallback, useRef } from "react";
 import type { Point2 } from "@/lib/geometry";
 import { dist2 } from "@/lib/geometry";
-import { commitActiveStroke } from "@/lib/strokeCommit";
+import { takeActiveStroke } from "@/lib/strokeCommit";
 
 const MIN_POINT_DIST = 0.004;
 
 type Props = {
   active: boolean;
-  strokesRef: MutableRefObject<Point2[][]>;
   currentStrokeRef: MutableRefObject<Point2[]>;
   onStrokeComplete: (stroke: Point2[]) => void;
 };
@@ -23,7 +22,7 @@ function appendPoint(stroke: Point2[], p: Point2) {
 /**
  * Full-screen pointer capture for mouse / trackpad drawing (normalized 0–1).
  */
-export function MouseDrawInput({ active, strokesRef, currentStrokeRef, onStrokeComplete }: Props) {
+export function MouseDrawInput({ active, currentStrokeRef, onStrokeComplete }: Props) {
   const elRef = useRef<HTMLDivElement>(null);
   const drawingRef = useRef(false);
 
@@ -71,7 +70,7 @@ export function MouseDrawInput({ active, strokesRef, currentStrokeRef, onStrokeC
         } catch {
           /* ignore */
         }
-        const stroke = commitActiveStroke(strokesRef, currentStrokeRef);
+        const stroke = takeActiveStroke(currentStrokeRef);
         if (stroke) onStrokeComplete(stroke);
       }}
       onPointerCancel={() => {
